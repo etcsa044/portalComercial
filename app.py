@@ -1269,6 +1269,62 @@ def modulo_llamados():
     elif filtro_tipo == "No Contestadas":
         df_display = df_display[~df_display["_Contestada"]].copy()
 
+    # ── Filtro de duración de conversación (intervalos de 15s) ──
+    if COL_CONVERSACION in df_display.columns:
+        dur_max_real = int(df_display[COL_CONVERSACION].max()) if len(df_display) > 0 else 0
+        if dur_max_real > 0:
+            # Generar opciones de 0 a techo redondeado cada 15s
+            techo = ((dur_max_real // 15) + 1) * 15
+            opciones_dur = list(range(0, techo + 1, 15))
+            if dur_max_real not in opciones_dur:
+                opciones_dur.append(dur_max_real)
+                opciones_dur.sort()
+
+            def _fmt_dur(s):
+                if s >= 60:
+                    m, seg = divmod(s, 60)
+                    return f"{m}m {seg}s" if seg else f"{m}m"
+                return f"{s}s"
+
+            col_dur_f1, col_dur_f2 = st.columns([3, 1])
+            with col_dur_f1:
+                rango_dur = st.select_slider(
+                    "⏱️ Filtrar por duración de conversación:",
+                    options=opciones_dur,
+                    value=(0, opciones_dur[-1]),
+                    format_func=_fmt_dur,
+                    key="llamados_filtro_duracion",
+                )
+            with col_dur_f2:
+                st.markdown(
+                    f"<div style='padding-top:28px;color:#b0bec5;font-size:0.85em;'>"
+                    f"Rango: <b>{_fmt_dur(rango_dur[0])}</b> → <b>{_fmt_dur(rango_dur[1])}</b></div>",
+                    unsafe_allow_html=True,
+                )
+            dur_min_sel, dur_max_sel = rango_dur
+            df_display = df_display[
+                df_display[COL_CONVERSACION].between(dur_min_sel, dur_max_sel)
+            ].copy()
+
+    # Guardar df_display completo para la pestaña de tendencias (antes de filtrar por rango de fechas)
+    df_display_full = df_display.copy()
+
+    # ── Filtro de rango de fechas (para vistas detalladas) ──
+    fechas_validas = df_display["_Fecha"].dropna()
+    if len(fechas_validas) > 0:
+        fecha_min = fechas_validas.min()
+        fecha_max = fechas_validas.max()
+        fechas_filtro = st.date_input(
+            "📅 Rango de análisis detallado (afecta KPIs, mapas de calor y listado):",
+            value=(fecha_min, fecha_max),
+            min_value=fecha_min,
+            max_value=fecha_max,
+            key="llamados_rango_fechas",
+        )
+        if isinstance(fechas_filtro, tuple) and len(fechas_filtro) == 2:
+            start_date, end_date = fechas_filtro
+            df_display = df_display[df_display["_Fecha"].between(start_date, end_date)].copy()
+
     # Inicializar el filtro de KPI en session_state si no existe
     if "llamados_filtro_kpi" not in st.session_state:
         st.session_state["llamados_filtro_kpi"] = "Todas"
@@ -1624,13 +1680,14 @@ def modulo_llamados():
     st.markdown('<div class="section-header">📊 Mapas de Calor de Productividad y Patrones</div>', unsafe_allow_html=True)
     st.markdown(
         "Navegá por las pestañas para analizar la actividad de los vendedores por franja horaria, "
-        "días de la semana y fechas del mes para identificar patrones de inactividad o teletrabajo."
+        "días de la semana, fechas del mes, o la evolución mensual de tendencias."
     )
 
-    tab_30min, tab_semanal, tab_mensual = st.tabs([
+    tab_30min, tab_semanal, tab_mensual, tab_tendencias = st.tabs([
         "🕐 Franjas Horarias (30 min)",
         "📅 Frecuencia Semanal",
-        "🗓️ Frecuencia por Fecha"
+        "🗓️ Frecuencia por Fecha",
+        "📈 Tendencias y Evolución"
     ])
 
     with tab_30min:
@@ -1644,6 +1701,175 @@ def modulo_llamados():
             st.plotly_chart(fig_heat_mensual, use_container_width=True)
         else:
             st.info("No se encontraron fechas válidas para graficar.")
+
+    # ════════════════════════════════════════
+    # PESTAÑA 4: TENDENCIAS Y EVOLUCIÓN MENSUAL
+    # ════════════════════════════════════════
+    with tab_tendencias:
+        # Usar df_display_full para mantener el contexto histórico completo
+        df_hist = df_display_full.copy()
+        df_hist["_Mes_Periodo"] = df_hist[COL_INICIO].dt.to_period("M")
+
+        meses_nombres = {
+            1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
+            7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
+        }
+        df_hist["_Mes_Label"] = df_hist[COL_INICIO].apply(
+            lambda d: f"{meses_nombres.get(d.month, d.strftime('%b'))} {d.year}" if pd.notna(d) else "Sin Fecha"
+        )
+        df_hist["_Mes_Sort"] = df_hist[COL_INICIO].dt.to_period("M").astype(str)
+
+        meses_unicos = df_hist.groupby("_Mes_Sort")["_Mes_Label"].first().reset_index()
+        meses_unicos = meses_unicos.sort_values("_Mes_Sort")
+        orden_meses = meses_unicos["_Mes_Label"].tolist()
+
+        n_meses = len(orden_meses)
+
+        if n_meses < 2:
+            st.info(
+                "📊 Para visualizar tendencias de evolución mensual, cargá un archivo CDR que abarque "
+                "al menos **2 meses** de registros. Actualmente se detectó **1 solo mes** en los datos."
+            )
+
+        # ── Agregación mensual ──
+        agg_mensual = df_hist.groupby("_Mes_Label").agg(
+            Total=(COL_INICIO, "count"),
+            Nros_Distintos=(COL_DESTINO, "nunique"),
+            Contestadas=("_Contestada", "sum"),
+            Fuera_Horario=("_En_Horario", lambda x: (~x).sum()),
+        ).reset_index()
+
+        agg_mensual["Efectividad"] = (agg_mensual["Contestadas"] / agg_mensual["Total"] * 100).round(1)
+        agg_mensual["Intentos_Lead"] = (agg_mensual["Total"] / agg_mensual["Nros_Distintos"]).round(2)
+        agg_mensual["Pct_Fuera"] = (agg_mensual["Fuera_Horario"] / agg_mensual["Total"] * 100).round(1)
+        agg_mensual["_Mes_Label"] = pd.Categorical(agg_mensual["_Mes_Label"], categories=orden_meses, ordered=True)
+        agg_mensual = agg_mensual.sort_values("_Mes_Label")
+
+        # ── Layout: Fila 1 (2 gráficos) ──
+        col_t1, col_t2 = st.columns(2)
+
+        # Gráfico 1: Volumen vs Efectividad (Dual Axis)
+        with col_t1:
+            fig_vol_ef = go.Figure()
+            fig_vol_ef.add_trace(go.Bar(
+                x=agg_mensual["_Mes_Label"].astype(str),
+                y=agg_mensual["Total"],
+                name="Llamadas",
+                marker_color="#5c6bc0",
+                yaxis="y",
+                opacity=0.85,
+            ))
+            fig_vol_ef.add_trace(go.Scatter(
+                x=agg_mensual["_Mes_Label"].astype(str),
+                y=agg_mensual["Efectividad"],
+                name="Efectividad %",
+                mode="lines+markers+text",
+                text=agg_mensual["Efectividad"].apply(lambda v: f"{v:.1f}%"),
+                textposition="top center",
+                textfont=dict(size=11, color="#00e676"),
+                line=dict(color="#00e676", width=3),
+                marker=dict(size=10, color="#00e676"),
+                yaxis="y2",
+            ))
+            fig_vol_ef.update_layout(
+                title=dict(text="Volumen de Llamadas vs Efectividad", font=dict(size=14)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e0e0e0", family="Inter"),
+                xaxis=dict(title="", type="category"),
+                yaxis=dict(title="Llamadas", gridcolor="rgba(255,255,255,0.05)", side="left"),
+                yaxis2=dict(title="Efectividad %", overlaying="y", side="right", range=[0, 105], showgrid=False),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=10)),
+                height=400,
+                margin=dict(t=70, b=40, l=50, r=50),
+            )
+            st.plotly_chart(fig_vol_ef, use_container_width=True)
+
+        # Gráfico 2: Evolución del Esfuerzo (Intentos x Lead)
+        with col_t2:
+            fig_esfuerzo = go.Figure()
+            fig_esfuerzo.add_trace(go.Scatter(
+                x=agg_mensual["_Mes_Label"].astype(str),
+                y=agg_mensual["Intentos_Lead"],
+                mode="lines+markers+text",
+                text=agg_mensual["Intentos_Lead"].apply(lambda v: f"{v:.2f}"),
+                textposition="top center",
+                textfont=dict(size=11, color="#b388ff"),
+                line=dict(color="#b388ff", width=3),
+                marker=dict(size=10, color="#b388ff"),
+                name="Intentos x Nro",
+            ))
+            fig_esfuerzo.update_layout(
+                title=dict(text="Evolución del Esfuerzo Comercial (Intentos x Lead)", font=dict(size=14)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e0e0e0", family="Inter"),
+                xaxis=dict(title="", type="category"),
+                yaxis=dict(title="Intentos promedio por nro.", gridcolor="rgba(255,255,255,0.05)"),
+                showlegend=False,
+                height=400,
+                margin=dict(t=70, b=40, l=50, r=50),
+            )
+            st.plotly_chart(fig_esfuerzo, use_container_width=True)
+
+        # ── Layout: Fila 2 (2 gráficos) ──
+        col_t3, col_t4 = st.columns(2)
+
+        # Gráfico 3: Comparativa Mensual por Vendedor
+        with col_t3:
+            vend_mensual = df_hist.groupby(["_Mes_Label", "_Vendedor"]).size().reset_index(name="Llamadas")
+            vend_mensual["_Mes_Label"] = pd.Categorical(vend_mensual["_Mes_Label"], categories=orden_meses, ordered=True)
+            vend_mensual = vend_mensual.sort_values("_Mes_Label")
+
+            fig_vend = px.bar(
+                vend_mensual,
+                x="_Mes_Label",
+                y="Llamadas",
+                color="_Vendedor",
+                barmode="group",
+                color_discrete_sequence=px.colors.qualitative.Pastel + px.colors.qualitative.Bold,
+            )
+            fig_vend.update_layout(
+                title=dict(text="Actividad por Vendedor (Comparativa Mensual)", font=dict(size=14)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e0e0e0", family="Inter"),
+                xaxis=dict(title="", type="category"),
+                yaxis=dict(title="Llamadas", gridcolor="rgba(255,255,255,0.05)"),
+                legend=dict(title="Vendedor", font=dict(size=9)),
+                height=400,
+                margin=dict(t=70, b=40, l=50, r=20),
+            )
+            st.plotly_chart(fig_vend, use_container_width=True)
+
+        # Gráfico 4: Evolución de Fuera de Horario
+        with col_t4:
+            fig_fuera = go.Figure()
+            fig_fuera.add_trace(go.Scatter(
+                x=agg_mensual["_Mes_Label"].astype(str),
+                y=agg_mensual["Pct_Fuera"],
+                mode="lines+markers+text",
+                text=agg_mensual["Pct_Fuera"].apply(lambda v: f"{v:.1f}%"),
+                textposition="top center",
+                textfont=dict(size=11, color="#ff5252"),
+                fill="tozeroy",
+                line=dict(color="#ff5252", width=3),
+                marker=dict(size=10, color="#ff5252"),
+                fillcolor="rgba(255,82,82,0.15)",
+                name="% Fuera de Horario",
+            ))
+            fig_fuera.update_layout(
+                title=dict(text="Evolución de Llamadas Fuera de Horario", font=dict(size=14)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e0e0e0", family="Inter"),
+                xaxis=dict(title="", type="category"),
+                yaxis=dict(title="% del total", gridcolor="rgba(255,255,255,0.05)", range=[0, max(agg_mensual["Pct_Fuera"].max() * 1.3, 10)]),
+                showlegend=False,
+                height=400,
+                margin=dict(t=70, b=40, l=50, r=50),
+            )
+            st.plotly_chart(fig_fuera, use_container_width=True)
 
     # ════════════════════════════════════════
     # RENDERIZADO UI: Tabla de Detalle
@@ -2265,5 +2491,52 @@ def main():
     elif modulo == "📞 Control de Llamados":
         modulo_llamados()
 
+def check_login():
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+
+    if st.session_state.logged_in:
+        return True
+
+    st.markdown("""
+    <div style="text-align:center; padding: 50px 0 25px 0;">
+        <h1 style="margin:0; font-size:2.5rem; font-weight:800;
+                   background: linear-gradient(135deg, #82b1ff, #b388ff);
+                   -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            🔒 Iniciar Sesión
+        </h1>
+        <p style="color:#a0a0b8; font-size:1rem; margin-top:10px;">
+            Ingresá tus credenciales para acceder al portal
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            usuario = st.text_input("Usuario (1-10)")
+            password = st.text_input("Contraseña", type="password")
+            submit = st.form_submit_button("Ingresar", type="primary", use_container_width=True)
+
+            if submit:
+                try:
+                    user_num = int(usuario)
+                    if 1 <= user_num <= 10:
+                        # La cuenta es: (Nro Usuario * 85) + 1000 para garantizar 4 dígitos mínimo
+                        expected_password = str((user_num * 85) + 1000)
+                        if password == expected_password:
+                            st.session_state.logged_in = True
+                            st.session_state.user_id = user_num
+                            st.rerun()
+                        else:
+                            st.error("Contraseña incorrecta")
+                    else:
+                        st.error("El usuario debe ser un número entre 1 y 10")
+                except ValueError:
+                    st.error("El usuario debe ser un número")
+
+    return False
+
 if __name__ == "__main__":
-    main()
+    if check_login():
+        main()
