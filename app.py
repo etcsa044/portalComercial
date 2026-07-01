@@ -2209,7 +2209,7 @@ def main():
                     # Preparar DataFrame para el editor
                     df_editor = df_penalizables[[
                         "Código", "Nombre", "Asignación", "Fecha alta",
-                        "Días Activos", "Motivo Baja", "Deuda vencida",
+                        "Días Activos", "Motivo Baja", "Fecha de baja", "Deuda vencida",
                     ]].copy()
                     df_editor.insert(0, "Aplicar Descuento", False)
                     df_editor = df_editor.reset_index(drop=True)
@@ -2228,6 +2228,8 @@ def main():
                             "Nombre": st.column_config.TextColumn("Cliente", disabled=True),
                             "Asignación": st.column_config.TextColumn("Vendedor", disabled=True),
                             "Días Activos": st.column_config.NumberColumn("Días", disabled=True, format="%d"),
+                            "Motivo Baja": st.column_config.TextColumn("Motivo Baja", disabled=True),
+                            "Fecha de baja": st.column_config.TextColumn("Fecha Baja", disabled=True),
                             "Deuda vencida": st.column_config.NumberColumn("Deuda Venc.", disabled=True, format="$%.2f"),
                         },
                         key="penalty_editor",
