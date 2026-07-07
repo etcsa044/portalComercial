@@ -1158,10 +1158,14 @@ def modulo_llamados():
         "End Time": COL_FIN,
         "Call Type": COL_TIPO,
         "Callee Number": COL_DESTINO,
-        "Dest Channel Extension": COL_DESTINO, # Fallback opcional
         "Answered by": COL_RESPONDIDA,
         "Action Type": COL_ACCION,
     }
+    
+    # Evitar duplicar nombres de columnas si ambas existen
+    if "Callee Number" not in df_calls.columns and "Dest Channel Extension" in df_calls.columns:
+        mapeo_columnas["Dest Channel Extension"] = COL_DESTINO
+        
     df_calls.rename(columns=mapeo_columnas, inplace=True)
 
     # ── Validar columnas mínimas ──
