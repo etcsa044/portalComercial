@@ -1147,6 +1147,23 @@ def modulo_llamados():
         st.error("No se pudieron leer datos del archivo.")
         return
 
+    # ── Mapeo de columnas Inglés a Español ──
+    mapeo_columnas = {
+        "Caller Name": COL_VENDEDOR,
+        "Caller Number": COL_NUMERO,
+        "Call Status": COL_ESTADO,
+        "Call Time": COL_DURACION,
+        "Talk Time": COL_CONVERSACION,
+        "Start Time": COL_INICIO,
+        "End Time": COL_FIN,
+        "Call Type": COL_TIPO,
+        "Callee Number": COL_DESTINO,
+        "Dest Channel Extension": COL_DESTINO, # Fallback opcional
+        "Answered by": COL_RESPONDIDA,
+        "Action Type": COL_ACCION,
+    }
+    df_calls.rename(columns=mapeo_columnas, inplace=True)
+
     # ── Validar columnas mínimas ──
     columnas_requeridas = [COL_NUMERO, COL_ESTADO, COL_DURACION, COL_INICIO]
     cols_faltantes = [c for c in columnas_requeridas if c not in df_calls.columns]
