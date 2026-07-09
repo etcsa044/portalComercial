@@ -1704,11 +1704,12 @@ def modulo_llamados():
         "días de la semana, fechas del mes, o la evolución mensual de tendencias."
     )
 
-    tab_30min, tab_semanal, tab_mensual, tab_tendencias = st.tabs([
+    tab_30min, tab_semanal, tab_mensual, tab_tendencias, tab_vendedores = st.tabs([
         "🕐 Franjas Horarias (30 min)",
         "📅 Frecuencia Semanal",
         "🗓️ Frecuencia por Fecha",
-        "📈 Tendencias y Evolución"
+        "📈 Tendencias y Evolución",
+        "👥 Rendimiento por Vendedor"
     ])
 
     with tab_30min:
@@ -1891,6 +1892,48 @@ def modulo_llamados():
                 margin=dict(t=70, b=40, l=50, r=50),
             )
             st.plotly_chart(fig_fuera, use_container_width=True)
+
+    # ════════════════════════════════════════
+    # PESTAÑA 5: RENDIMIENTO POR VENDEDOR
+    # ════════════════════════════════════════
+    with tab_vendedores:
+        if not df_display.empty:
+            vendedores_stats = []
+            for vendedor, df_vendedor in df_display.groupby("_Vendedor"):
+                total_llamadas = len(df_vendedor)
+                nros_dist = df_vendedor[COL_DESTINO].nunique() if COL_DESTINO in df_vendedor.columns else 0
+                contestadas = df_vendedor["_Contestada"].sum()
+                efectividad = (contestadas / total_llamadas * 100) if total_llamadas > 0 else 0
+                
+                dur_conv = 0
+                if COL_CONVERSACION in df_vendedor.columns:
+                    dur_conv = df_vendedor.loc[df_vendedor["_Contestada"], COL_CONVERSACION].mean()
+                if pd.isna(dur_conv):
+                    dur_conv = 0
+                dur_min = int(dur_conv) // 60
+                dur_seg = int(dur_conv) % 60
+                dur_str = f"{dur_min}:{dur_seg:02d}"
+                
+                en_horario = df_vendedor["_En_Horario"].sum()
+                fuera_horario = total_llamadas - en_horario
+                
+                intentos_lead = (total_llamadas / nros_dist) if nros_dist > 0 else 0
+                
+                vendedores_stats.append({
+                    "Vendedor": vendedor,
+                    "Total Llamadas": total_llamadas,
+                    "Nros Distintos": nros_dist,
+                    "Contestadas": contestadas,
+                    "Efectividad": f"{efectividad:.1f}%",
+                    "Duración Prom.": dur_str,
+                    "Fuera de Horario": fuera_horario,
+                    "Intentos x Nro": round(intentos_lead, 2)
+                })
+                
+            df_vendedores = pd.DataFrame(vendedores_stats)
+            st.dataframe(df_vendedores, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay datos para mostrar con los filtros actuales.")
 
     # ════════════════════════════════════════
     # RENDERIZADO UI: Tabla de Detalle
