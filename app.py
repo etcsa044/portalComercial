@@ -128,9 +128,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS bajas_descontadas (
             codigo_cliente TEXT PRIMARY KEY,
             fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            vendedor TEXT
+            vendedor TEXT,
+            fecha_baja TEXT
         )
     """)
+    
+    # Migración para DBs antiguas (añade la columna si no existe)
+    try:
+        cursor.execute("ALTER TABLE bajas_descontadas ADD COLUMN fecha_baja TEXT")
+    except sqlite3.OperationalError:
+        pass
     
     # Tabla de reglas de semáforo
     cursor.execute("""
@@ -240,8 +247,8 @@ def insertar_descuentos(registros: list[dict]):
     cursor = conn.cursor()
     for r in registros:
         cursor.execute(
-            "INSERT OR IGNORE INTO bajas_descontadas (codigo_cliente, vendedor) VALUES (?, ?)",
-            (str(r["codigo"]), str(r["vendedor"])),
+            "INSERT OR IGNORE INTO bajas_descontadas (codigo_cliente, vendedor, fecha_baja) VALUES (?, ?, ?)",
+            (str(r["codigo"]), str(r["vendedor"]), str(r.get("fecha_baja", ""))),
         )
     conn.commit()
     conn.close()
@@ -251,7 +258,7 @@ def get_historial_descuentos() -> pd.DataFrame:
     """Retorna el historial completo de descuentos aplicados."""
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql_query(
-        "SELECT codigo_cliente, fecha_registro, vendedor FROM bajas_descontadas ORDER BY fecha_registro DESC",
+        "SELECT codigo_cliente, fecha_registro, vendedor, fecha_baja FROM bajas_descontadas ORDER BY fecha_registro DESC",
         conn,
     )
     conn.close()
@@ -2322,7 +2329,11 @@ def main():
 
                     if confirmar and n_sel > 0:
                         registros = [
-                            {"codigo": row["Código"], "vendedor": row["Asignación"]}
+                            {
+                                "codigo": row["Código"], 
+                                "vendedor": row["Asignación"],
+                                "fecha_baja": row["Fecha de baja"]
+                            }
                             for _, row in seleccionados.iterrows()
                         ]
                         insertar_descuentos(registros)
