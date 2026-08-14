@@ -2817,6 +2817,25 @@ def modulo_supervivencia():
         
         st.dataframe(df_resumen, use_container_width=True, hide_index=True)
 
+        st.markdown('<br><div class="section-header">📋 Reporte Completo por Localidad</div>', unsafe_allow_html=True)
+        df_ciudad_tabla = df_filtered.groupby("Ciudad").agg(
+            Total_Instalaciones=("Código", "count"),
+            Activas=("Activa", "sum")
+        ).reset_index()
+        df_ciudad_tabla["Bajas"] = df_ciudad_tabla["Total_Instalaciones"] - df_ciudad_tabla["Activas"]
+        df_ciudad_tabla["Supervivencia (%)"] = (df_ciudad_tabla["Activas"] / df_ciudad_tabla["Total_Instalaciones"] * 100).round(1)
+        st.dataframe(df_ciudad_tabla.sort_values("Total_Instalaciones", ascending=False), use_container_width=True, hide_index=True)
+
+        st.markdown('<br><div class="section-header">📡 Reporte Completo por Nodo</div>', unsafe_allow_html=True)
+        st.info("💡 Importante: Las instalaciones dadas de baja que no tenían el Nodo cargado en su Ticket original aparecerán listadas bajo 'Sin nodo'.")
+        df_nodo_tabla = df_filtered.groupby("Nodo").agg(
+            Total_Instalaciones=("Código", "count"),
+            Activas=("Activa", "sum")
+        ).reset_index()
+        df_nodo_tabla["Bajas"] = df_nodo_tabla["Total_Instalaciones"] - df_nodo_tabla["Activas"]
+        df_nodo_tabla["Supervivencia (%)"] = (df_nodo_tabla["Activas"] / df_nodo_tabla["Total_Instalaciones"] * 100).round(1)
+        st.dataframe(df_nodo_tabla.sort_values("Total_Instalaciones", ascending=False), use_container_width=True, hide_index=True)
+
 
 def check_login():
     if "logged_in" not in st.session_state:
