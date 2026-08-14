@@ -290,7 +290,7 @@ def leer_archivo(uploaded_file, **kwargs) -> pd.DataFrame:
     if nombre.endswith(".xlsx") or nombre.endswith(".xls"):
         return pd.read_excel(uploaded_file, dtype=kwargs.get("dtype"), engine="openpyxl")
     else:
-        return pd.read_csv(uploaded_file, dtype=kwargs.get("dtype"), sep=None, engine="python")
+        return pd.read_csv(uploaded_file, dtype=kwargs.get("dtype"), sep=None, engine="python", on_bad_lines="skip")
 
 
 def procesar_datos(df_ventas: pd.DataFrame, df_db: pd.DataFrame, df_bajas: pd.DataFrame) -> pd.DataFrame:
