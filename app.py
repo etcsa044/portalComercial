@@ -2775,22 +2775,22 @@ def modulo_supervivencia():
         )
         col_g1.plotly_chart(fig1, use_container_width=True)
         
-        # Gráfico 2: Tasa de retención por Nodo (top 15)
-        df_nodo = df_filtered.groupby("Nodo").agg(
+        # Gráfico 2: Tasa de retención por Ciudad (top 15)
+        df_ciudad = df_filtered.groupby("Ciudad").agg(
             Total=("Código", "count"),
             Activas=("Activa", "sum")
         ).reset_index()
-        df_nodo["Tasa (%)"] = (df_nodo["Activas"] / df_nodo["Total"]) * 100
-        df_nodo = df_nodo[df_nodo["Total"] >= 5]  # Filtrar nodos con muy pocos tickets
-        df_nodo = df_nodo.sort_values("Tasa (%)", ascending=False).head(15)
+        df_ciudad["Tasa (%)"] = (df_ciudad["Activas"] / df_ciudad["Total"]) * 100
+        df_ciudad = df_ciudad[df_ciudad["Total"] >= 5]  # Filtrar ciudades con muy pocos tickets
+        df_ciudad = df_ciudad.sort_values("Tasa (%)", ascending=False).head(15)
         
-        if len(df_nodo) > 0:
+        if len(df_ciudad) > 0:
             fig2 = px.bar(
-                df_nodo,
-                x="Nodo",
+                df_ciudad,
+                x="Ciudad",
                 y="Tasa (%)",
                 text="Total",
-                title="Supervivencia por Nodo (Top 15, Min 5 tickets)",
+                title="Supervivencia por Localidad (Top 15, Min 5 tickets)",
                 color="Tasa (%)",
                 color_continuous_scale="RdYlGn"
             )
