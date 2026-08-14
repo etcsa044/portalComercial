@@ -1992,7 +1992,7 @@ def main():
 
         modulo = st.radio(
             "🧭 Seleccioná un módulo:",
-            ["🎯 Auditoría de Ventas", "📞 Control de Llamados"],
+            ["🎯 Auditoría de Ventas", "📞 Control de Llamados", "📈 Supervivencia de Conexiones"],
             index=0,
             key="nav_modulo",
         )
@@ -2055,15 +2055,42 @@ def main():
                     help="Columnas esperadas: Código, Categoría, Fecha",
                 )
 
-            if file_ventas and file_db and file_bajas:
+            # ── Lógica de persistencia local ──
+            DATA_DIR = os.path.join(APP_DIR, "data")
+            os.makedirs(DATA_DIR, exist_ok=True)
+            ruta_ventas = os.path.join(DATA_DIR, "ventas.csv")
+            ruta_db = os.path.join(DATA_DIR, "db.csv")
+            ruta_bajas = os.path.join(DATA_DIR, "bajas.csv")
+
+            archivos_cargados = (file_ventas is not None) and (file_db is not None) and (file_bajas is not None)
+            archivos_locales_existen = os.path.exists(ruta_ventas) and os.path.exists(ruta_db) and os.path.exists(ruta_bajas)
+
+            if archivos_locales_existen and not archivos_cargados:
+                st.info("📌 Utilizando archivos almacenados localmente de una carga previa.")
+                if st.button("🗑️ Eliminar archivos locales para cargar nuevos"):
+                    os.remove(ruta_ventas)
+                    os.remove(ruta_db)
+                    os.remove(ruta_bajas)
+                    st.rerun()
+
+            if archivos_cargados or archivos_locales_existen:
                 # Leer CSVs
                 try:
                     dtype_codigos = {"Código": str, "Codigo": str}
-                    df_ventas = leer_archivo(file_ventas, dtype=dtype_codigos)
-                    df_db = leer_archivo(file_db, dtype=dtype_codigos)
-                    df_bajas = leer_archivo(file_bajas, dtype=dtype_codigos)
+                    if archivos_cargados:
+                        df_ventas = leer_archivo(file_ventas, dtype=dtype_codigos)
+                        df_db = leer_archivo(file_db, dtype=dtype_codigos)
+                        df_bajas = leer_archivo(file_bajas, dtype=dtype_codigos)
+                        # Guardar localmente
+                        df_ventas.to_csv(ruta_ventas, index=False)
+                        df_db.to_csv(ruta_db, index=False)
+                        df_bajas.to_csv(ruta_bajas, index=False)
+                    else:
+                        df_ventas = pd.read_csv(ruta_ventas, dtype=dtype_codigos)
+                        df_db = pd.read_csv(ruta_db, dtype=dtype_codigos)
+                        df_bajas = pd.read_csv(ruta_bajas, dtype=dtype_codigos)
                 except Exception as e:
-                    st.error(f"❌ Error al leer los archivos CSV: {e}")
+                    st.error(f"❌ Error al leer los archivos: {e}")
                     return
 
                 # Procesar
@@ -2567,6 +2594,229 @@ def main():
     # ══════════════════════════════════════════
     elif modulo == "📞 Control de Llamados":
         modulo_llamados()
+
+    # ══════════════════════════════════════════
+    # MÓDULO 3: SUPERVIVENCIA DE CONEXIONES
+    # ══════════════════════════════════════════
+    elif modulo == "📈 Supervivencia de Conexiones":
+        modulo_supervivencia()
+
+
+def modulo_supervivencia():
+    """Módulo de Análisis de Supervivencia y Retención por Cohortes."""
+    st.markdown('''
+    <div style="text-align:center; padding: 10px 0 25px 0;">
+        <h1 style="margin:0; font-size:2.2rem; font-weight:800;
+                   background: linear-gradient(135deg, #82b1ff, #b388ff);
+                   -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            📈 Análisis de Supervivencia
+        </h1>
+        <p style="color:#a0a0b8; font-size:0.95rem; margin-top:4px;">
+            Evolución de conexiones y tasa de retención por cohortes
+        </p>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">📂 Carga de Datos</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        file_tickets = st.file_uploader(
+            "**Tickets de Instalación**",
+            type=["csv", "xlsx", "xls"],
+            key="tickets_sup",
+            help="Asegurate de que contenga: Código, Fecha alta, Operador, Ciudad, etc."
+        )
+    with col2:
+        file_conex = st.file_uploader(
+            "**Conexiones Activas**",
+            type=["csv", "xlsx", "xls"],
+            key="conex_sup",
+            help="Asegurate de que contenga: Código, Nodo, Plan, etc."
+        )
+        
+    if file_tickets and file_conex:
+        with st.spinner("Procesando datos y cruzando información..."):
+            try:
+                # Leer datos
+                dtype_cols = {"Código": str, "Codigo": str}
+                df_t = leer_archivo(file_tickets, dtype=dtype_cols)
+                df_c = leer_archivo(file_conex, dtype=dtype_cols)
+                
+                # Normalizar columnas Código
+                if "Codigo" in df_t.columns and "Código" not in df_t.columns: 
+                    df_t.rename(columns={"Codigo": "Código"}, inplace=True)
+                if "Codigo" in df_c.columns and "Código" not in df_c.columns: 
+                    df_c.rename(columns={"Codigo": "Código"}, inplace=True)
+                
+                if "Código" not in df_t.columns or "Código" not in df_c.columns:
+                    st.error("No se encontró la columna 'Código' en alguno de los archivos.")
+                    return
+                
+                df_t["Código"] = df_t["Código"].astype(str).str.strip().str.zfill(1)
+                df_c["Código"] = df_c["Código"].astype(str).str.strip().str.zfill(1)
+                
+                # Normalizar fechas de Tickets (usaremos "Fecha alta")
+                col_fecha_t = None
+                for c in ["Fecha alta", "Fecha Alta", "Fecha", "Fecha de alta"]:
+                    if c in df_t.columns:
+                        col_fecha_t = c
+                        break
+                
+                if col_fecha_t:
+                    df_t["_Fecha_Ticket"] = parse_fecha(df_t[col_fecha_t])
+                else:
+                    st.error("No se encontró columna de fecha en Tickets (se buscó: Fecha alta).")
+                    return
+                
+                # Extraer mes y año de cohorte
+                df_t["Cohorte"] = df_t["_Fecha_Ticket"].dt.to_period("M").astype(str)
+                # Filtrar valores NaT
+                df_t = df_t[df_t["Cohorte"] != "NaT"].copy()
+                
+                # Armar base de tickets agrupada por código (para evitar duplicados del mismo cliente)
+                # Si un cliente tiene múltiples tickets, nos quedamos con el más reciente
+                df_t_unique = df_t.sort_values("_Fecha_Ticket", ascending=False).drop_duplicates(subset=["Código"], keep="first").copy()
+                
+                # Preparar Conexiones (solo necesitamos saber si existe y algunos datos extra si queremos cruzarlos)
+                df_c_unique = df_c.drop_duplicates(subset=["Código"]).copy()
+                df_c_unique["Activa"] = True
+                
+                # Cruce (Merge Left: Tickets -> Conexiones)
+                df_merge = pd.merge(df_t_unique, df_c_unique[["Código", "Activa"]], on="Código", how="left")
+                df_merge["Activa"] = df_merge["Activa"].fillna(False)
+                
+                # Columnas adicionales para los filtros (tomadas del ticket)
+                df_merge["Ciudad"] = df_merge["Ciudad"].fillna("Sin ciudad") if "Ciudad" in df_merge.columns else "Desconocida"
+                df_merge["Operador"] = df_merge["Operador"].fillna("Sin operador") if "Operador" in df_merge.columns else "Desconocido"
+                
+                # Para Nodo y Plan, es mejor tomarlos de Conexiones, pero las canceladas no lo tendrán.
+                # Como alternativa, tomamos Nodo del ticket si existe.
+                df_merge["Nodo"] = df_merge["Nodo"].fillna("Sin nodo") if "Nodo" in df_merge.columns else "Desconocido"
+                df_merge["Plan"] = df_merge["Plan"].fillna("Sin plan") if "Plan" in df_merge.columns else "Desconocido"
+                
+            except Exception as e:
+                st.error(f"Error procesando los archivos: {e}")
+                return
+                
+        st.success(f"Se procesaron {len(df_merge)} instalaciones (tickets únicos).")
+        
+        st.markdown("---")
+        st.markdown('<div class="section-header">🔍 Filtros de Análisis</div>', unsafe_allow_html=True)
+        
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            ciudades = ["Todas"] + sorted(df_merge["Ciudad"].astype(str).unique().tolist())
+            filtro_ciudad = st.selectbox("Ciudad:", ciudades)
+        with col_f2:
+            nodos = ["Todos"] + sorted(df_merge["Nodo"].astype(str).unique().tolist())
+            filtro_nodo = st.selectbox("Nodo:", nodos)
+        with col_f3:
+            vendedores = ["Todos"] + sorted(df_merge["Operador"].astype(str).unique().tolist())
+            filtro_vendedor = st.selectbox("Vendedor / Operador:", vendedores)
+            
+        # Aplicar filtros
+        df_filtered = df_merge.copy()
+        if filtro_ciudad != "Todas": df_filtered = df_filtered[df_filtered["Ciudad"] == filtro_ciudad]
+        if filtro_nodo != "Todos": df_filtered = df_filtered[df_filtered["Nodo"] == filtro_nodo]
+        if filtro_vendedor != "Todos": df_filtered = df_filtered[df_filtered["Operador"] == filtro_vendedor]
+        
+        # ── KPIs ──
+        total_tickets = len(df_filtered)
+        total_activas = df_filtered["Activa"].sum()
+        total_bajas = total_tickets - total_activas
+        tasa_sup = (total_activas / total_tickets * 100) if total_tickets > 0 else 0
+        
+        k1, k2, k3, k4 = st.columns(4)
+        
+        def local_render_kpi(valor, label, color_class="verde"):
+            return f'''
+            <div class="kpi-card">
+                <div class="kpi-value {color_class}">{valor}</div>
+                <div class="kpi-label">{label}</div>
+            </div>
+            '''
+            
+        with k1: st.markdown(local_render_kpi(total_tickets, "Total Instalaciones", "total"), unsafe_allow_html=True)
+        with k2: st.markdown(local_render_kpi(total_activas, "Activas Hoy", "verde"), unsafe_allow_html=True)
+        with k3: st.markdown(local_render_kpi(total_bajas, "Bajas Estimadas", "rojo"), unsafe_allow_html=True)
+        with k4: st.markdown(local_render_kpi(f"{tasa_sup:.1f}%", "Supervivencia", "amarillo"), unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if total_tickets == 0:
+            st.warning("No hay datos para los filtros seleccionados.")
+            return
+
+        # ── Gráficos ──
+        col_g1, col_g2 = st.columns(2)
+        
+        # Gráfico 1: Evolución por Cohortes
+        df_cohorte = df_filtered.groupby(["Cohorte", "Activa"]).size().reset_index(name="Cantidad")
+        df_cohorte["Estado"] = df_cohorte["Activa"].map({True: "Activa Hoy", False: "Baja"})
+        df_cohorte = df_cohorte.sort_values("Cohorte")
+        
+        fig1 = px.bar(
+            df_cohorte, 
+            x="Cohorte", 
+            y="Cantidad", 
+            color="Estado",
+            color_discrete_map={"Activa Hoy": "#00e676", "Baja": "#ff5252"},
+            barmode="stack",
+            title="Evolución de Instalaciones y Retención (por Mes de Alta)"
+        )
+        fig1.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#e0e0e0", family="Inter"),
+            xaxis=dict(title="", tickangle=-45),
+            yaxis=dict(title="Instalaciones", gridcolor="rgba(255,255,255,0.05)"),
+            legend_title=""
+        )
+        col_g1.plotly_chart(fig1, use_container_width=True)
+        
+        # Gráfico 2: Tasa de retención por Nodo (top 15)
+        df_nodo = df_filtered.groupby("Nodo").agg(
+            Total=("Código", "count"),
+            Activas=("Activa", "sum")
+        ).reset_index()
+        df_nodo["Tasa (%)"] = (df_nodo["Activas"] / df_nodo["Total"]) * 100
+        df_nodo = df_nodo[df_nodo["Total"] >= 5]  # Filtrar nodos con muy pocos tickets
+        df_nodo = df_nodo.sort_values("Tasa (%)", ascending=False).head(15)
+        
+        if len(df_nodo) > 0:
+            fig2 = px.bar(
+                df_nodo,
+                x="Nodo",
+                y="Tasa (%)",
+                text="Total",
+                title="Supervivencia por Nodo (Top 15, Min 5 tickets)",
+                color="Tasa (%)",
+                color_continuous_scale="RdYlGn"
+            )
+            fig2.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#e0e0e0", family="Inter"),
+                xaxis=dict(title="", tickangle=-45),
+                yaxis=dict(title="Supervivencia (%)", gridcolor="rgba(255,255,255,0.05)"),
+                coloraxis_showscale=False
+            )
+            fig2.update_traces(texttemplate='N=%{text}', textposition='outside')
+            col_g2.plotly_chart(fig2, use_container_width=True)
+
+        # ── Tabla de Resumen por Cohorte ──
+        st.markdown('<div class="section-header">📋 Resumen Tabular por Cohorte</div>', unsafe_allow_html=True)
+        df_resumen = df_filtered.groupby("Cohorte").agg(
+            Total_Instalaciones=("Código", "count"),
+            Activas=("Activa", "sum")
+        ).reset_index()
+        df_resumen["Bajas"] = df_resumen["Total_Instalaciones"] - df_resumen["Activas"]
+        df_resumen["Supervivencia (%)"] = (df_resumen["Activas"] / df_resumen["Total_Instalaciones"] * 100).round(1)
+        df_resumen = df_resumen.sort_values("Cohorte", ascending=False)
+        
+        st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+
 
 def check_login():
     if "logged_in" not in st.session_state:
