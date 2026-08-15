@@ -2772,13 +2772,22 @@ def modulo_supervivencia():
             
         # Aplicar filtros
         df_filtered = df_validos.copy()
+        df_filtered_all = df_merge.copy()
+        
         if len(rango_fechas) == 2:
             f_inicio, f_fin = rango_fechas
             df_filtered = df_filtered[(df_filtered["_Fecha_Ticket"].dt.date >= f_inicio) & (df_filtered["_Fecha_Ticket"].dt.date <= f_fin)]
+            df_filtered_all = df_filtered_all[(df_filtered_all["_Fecha_Ticket"].dt.date >= f_inicio) & (df_filtered_all["_Fecha_Ticket"].dt.date <= f_fin)]
         
-        if filtro_ciudad != "Todas": df_filtered = df_filtered[df_filtered["Ciudad"] == filtro_ciudad]
-        if filtro_nodo != "Todos": df_filtered = df_filtered[df_filtered["Nodo_Final"] == filtro_nodo]
-        if filtro_vendedor != "Todos": df_filtered = df_filtered[df_filtered["Operador"] == filtro_vendedor]
+        if filtro_ciudad != "Todas":
+            df_filtered = df_filtered[df_filtered["Ciudad"] == filtro_ciudad]
+            df_filtered_all = df_filtered_all[df_filtered_all["Ciudad"] == filtro_ciudad]
+        if filtro_nodo != "Todos":
+            df_filtered = df_filtered[df_filtered["Nodo_Final"] == filtro_nodo]
+            df_filtered_all = df_filtered_all[df_filtered_all["Nodo_Final"] == filtro_nodo]
+        if filtro_vendedor != "Todos":
+            df_filtered = df_filtered[df_filtered["Operador"] == filtro_vendedor]
+            df_filtered_all = df_filtered_all[df_filtered_all["Operador"] == filtro_vendedor]
         
         # ── KPIs ──
         total_efectivas = len(df_filtered)
@@ -2833,11 +2842,18 @@ def modulo_supervivencia():
         # ── Gráficos Fila 2 ──
         col_g3, col_g4 = st.columns(2)
         
-        # Gráfico 3: Ventas por Vendedor (En el rango seleccionado)
-        df_vend = df_filtered.groupby("Operador").size().reset_index(name="Total").sort_values("Total", ascending=False).head(10)
-        fig3 = px.bar(df_vend, x="Operador", y="Total", text="Total", title="Top 10 Vendedores (Rango seleccionado)", color="Total", color_continuous_scale="Blues")
-        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e0e0e0"), xaxis_title="", coloraxis_showscale=False)
-        fig3.update_traces(textposition='outside')
+        # Gráfico 3: Ventas por Vendedor (En el rango seleccionado, desglose Activa/Baja/Fallido)
+        top10_ops = df_filtered_all.groupby("Operador").size().nlargest(10).index
+        df_vend_top10 = df_filtered_all[df_filtered_all["Operador"].isin(top10_ops)]
+        df_vend = df_vend_top10.groupby(["Operador", "Estado_Real"]).size().reset_index(name="Cantidad")
+        
+        fig3 = px.bar(
+            df_vend, x="Operador", y="Cantidad", color="Estado_Real",
+            title="Top 10 Vendedores (Rango seleccionado)",
+            color_discrete_map={"Activa": "#00e676", "Baja": "#ff5252", "Fallido": "#808080"},
+            barmode="stack"
+        )
+        fig3.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#e0e0e0"), xaxis_title="", legend_title="")
         col_g3.plotly_chart(fig3, use_container_width=True)
         
         # Gráfico 4: Distribución Activos por Nodo
