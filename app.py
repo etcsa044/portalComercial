@@ -1992,7 +1992,7 @@ def main():
 
         modulo = st.radio(
             "🧭 Seleccioná un módulo:",
-            ["🎯 Auditoría de Ventas", "📞 Control de Llamados", "📈 Supervivencia de Conexiones"],
+            ["🎯 Auditoría de Ventas", "📞 Control de Llamados", "📈 Supervivencia de Conexiones", "💰 Auditoría de Cobranzas"],
             index=0,
             key="nav_modulo",
         )
@@ -2897,6 +2897,171 @@ def modulo_supervivencia():
         df_nodo_tabla["Bajas"] = df_nodo_tabla["Nodo_Final"].map(b_no).fillna(0).astype(int)
         df_nodo_tabla["Supervivencia (%)"] = (df_nodo_tabla["Activas"] / df_nodo_tabla["Total_Instalaciones"] * 100).round(1)
         st.dataframe(df_nodo_tabla.sort_values("Total_Instalaciones", ascending=False), use_container_width=True, hide_index=True)
+
+    # ══════════════════════════════════════════
+    # MÓDULO 4: AUDITORÍA DE COBRANZAS
+    # ══════════════════════════════════════════
+    elif modulo == "💰 Auditoría de Cobranzas":
+        st.markdown("""
+        <div style="text-align:center; padding: 10px 0 25px 0;">
+            <h1 style="margin:0; font-size:2.2rem; font-weight:800;
+                       background: linear-gradient(135deg, #82b1ff, #b388ff);
+                       -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                💰 Auditoría de Cobranzas
+            </h1>
+            <p style="color:#a0a0b8; font-size:0.95rem; margin-top:4px;">
+                Control de conexiones activas, pagos recibidos y planes sin abono
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('<div class="section-header">📂 Carga de Archivos</div>', unsafe_allow_html=True)
+        
+        col_up1, col_up2, col_up3 = st.columns(3)
+        with col_up1:
+            file_conexiones = st.file_uploader(
+                "**Conexiones**",
+                type=["csv", "xlsx", "xls"],
+                key="up_conexiones"
+            )
+        with col_up2:
+            file_pagos = st.file_uploader(
+                "**Pagos**",
+                type=["csv", "xlsx", "xls"],
+                key="up_pagos"
+            )
+        with col_up3:
+            file_tickets = st.file_uploader(
+                "**Tickets de Venta**",
+                type=["csv", "xlsx", "xls"],
+                key="up_tickets"
+            )
+            
+        st.markdown('<div class="section-header">⚙️ Configuración de Auditoría</div>', unsafe_allow_html=True)
+        mes_auditoria = st.date_input("Mes de Auditoría (Selecciona cualquier día del mes a evaluar)", value=datetime.today())
+        
+        if file_conexiones and file_pagos and file_tickets:
+            with st.spinner("🔄 Procesando auditoría de cobranzas..."):
+                try:
+                    df_con = leer_archivo(file_conexiones)
+                    df_pag = leer_archivo(file_pagos)
+                    df_tic = leer_archivo(file_tickets)
+                    
+                    # Normalizar Código
+                    for df in [df_con, df_pag, df_tic]:
+                        if "Código" in df.columns:
+                            df["Código"] = df["Código"].astype(str).str.strip().str.zfill(1)
+                        elif "Codigo" in df.columns:
+                            df.rename(columns={"Codigo": "Código"}, inplace=True)
+                            df["Código"] = df["Código"].astype(str).str.strip().str.zfill(1)
+                            
+                    # 1. Filtrar Conexiones Activas
+                    if "Estado Cliente" in df_con.columns:
+                        df_con = df_con[df_con["Estado Cliente"].astype(str).str.lower().isin(["activo", "habilitado", "activa", "habilitada"])]
+                        
+                    # Parse dates
+                    if "Fecha de inicio" in df_con.columns:
+                        df_con["Fecha_inicio_dt"] = parse_fecha(df_con["Fecha de inicio"])
+                    if "Fecha ingreso" in df_pag.columns:
+                        df_pag["Fecha_ingreso_dt"] = parse_fecha(df_pag["Fecha ingreso"])
+                        
+                    # 2. Contar pagos por código
+                    # Group by Código to count payments
+                    pagos_por_codigo = df_pag.groupby("Código").size().reset_index(name="Total_Pagos")
+                    
+                    # 3. Tickets de venta codes
+                    codigos_con_ticket = set(df_tic["Código"].unique())
+                    
+                    # Merge Conexiones + Pagos
+                    df_aud = pd.merge(df_con, pagos_por_codigo, on="Código", how="left")
+                    df_aud["Total_Pagos"] = df_aud["Total_Pagos"].fillna(0).astype(int)
+                    
+                    # Logic implementation
+                    def evaluar_cobranza(row):
+                        alertas = []
+                        
+                        # Sin ticket
+                        if row["Código"] not in codigos_con_ticket:
+                            alertas.append("Sin ticket de venta")
+                            
+                        # Abono 0
+                        plan = str(row.get("Plan", "")).upper()
+                        if "ABONO 0" in plan:
+                            alertas.append("Plan Abono 0")
+                            
+                        # Pagos esperados
+                        total_pagos = row["Total_Pagos"]
+                        if total_pagos == 0:
+                            alertas.append("0 pagos")
+                            
+                        fecha_inicio = row.get("Fecha_inicio_dt")
+                        if pd.notna(fecha_inicio):
+                            meses_antiguedad = (mes_auditoria.year - fecha_inicio.year) * 12 + (mes_auditoria.month - fecha_inicio.month)
+                            pagos_esperados = meses_antiguedad
+                            
+                            # Si empezó entre el 1 y el 25, suma 1 mes más esperado
+                            if fecha_inicio.day <= 25:
+                                pagos_esperados += 1
+                                
+                            if pagos_esperados < 0:
+                                pagos_esperados = 0
+                                
+                            if meses_antiguedad >= 2 and total_pagos <= 1:
+                                alertas.append(f"Alerta: {meses_antiguedad} meses con {total_pagos} pagos")
+                            
+                            if total_pagos < pagos_esperados:
+                                alertas.append(f"Deuda ({total_pagos}/{pagos_esperados} pagos esperados)")
+                        
+                        return " | ".join(alertas) if alertas else "OK"
+                        
+                    df_aud["Estado_Auditoría"] = df_aud.apply(evaluar_cobranza, axis=1)
+                    
+                    df_anomalias = df_aud[df_aud["Estado_Auditoría"] != "OK"].copy()
+                    
+                    st.markdown("### 📊 Resultados de la Auditoría")
+                    
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    with kpi1:
+                        st.markdown(f'''
+                        <div class="kpi-card">
+                            <div class="kpi-value total">{len(df_con)}</div>
+                            <div class="kpi-label">Conexiones Activas</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                    with kpi2:
+                        sin_pagos = len(df_aud[df_aud["Total_Pagos"] == 0])
+                        st.markdown(f'''
+                        <div class="kpi-card">
+                            <div class="kpi-value rojo">{sin_pagos}</div>
+                            <div class="kpi-label">Conexiones Sin Pagos</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                    with kpi3:
+                        sin_ticket = df_aud["Estado_Auditoría"].astype(str).str.contains("Sin ticket de venta").sum()
+                        st.markdown(f'''
+                        <div class="kpi-card">
+                            <div class="kpi-value amarillo">{sin_ticket}</div>
+                            <div class="kpi-label">Sin Ticket de Venta</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                    with kpi4:
+                        abono_0 = df_aud["Estado_Auditoría"].astype(str).str.contains("Plan Abono 0").sum()
+                        st.markdown(f'''
+                        <div class="kpi-card">
+                            <div class="kpi-value amarillo">{abono_0}</div>
+                            <div class="kpi-label">Abonos 0</div>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                        
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.dataframe(
+                        df_anomalias[["Código", "Cliente", "Estado Cliente", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]],
+                        use_container_width=True,
+                        height=500
+                    )
+                    
+                except Exception as e:
+                    st.error(f"❌ Ocurrió un error al procesar los archivos: {e}")
 
 def check_login():
     if "logged_in" not in st.session_state:
