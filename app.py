@@ -2600,6 +2600,9 @@ def main():
     # ══════════════════════════════════════════
     elif modulo == "📈 Supervivencia de Conexiones":
         modulo_supervivencia()
+        
+    elif modulo == "💰 Auditoría de Cobranzas":
+        modulo_auditoria_cobranzas()
 
 
 def modulo_supervivencia():
@@ -2901,7 +2904,7 @@ def modulo_supervivencia():
     # ══════════════════════════════════════════
     # MÓDULO 4: AUDITORÍA DE COBRANZAS
     # ══════════════════════════════════════════
-    elif modulo == "💰 Auditoría de Cobranzas":
+def modulo_auditoria_cobranzas():
         st.markdown("""
         <div style="text-align:center; padding: 10px 0 25px 0;">
             <h1 style="margin:0; font-size:2.2rem; font-weight:800;
