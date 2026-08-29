@@ -2941,9 +2941,20 @@ def modulo_auditoria_cobranzas():
             )
             
         st.markdown('<div class="section-header">⚙️ Configuración de Auditoría</div>', unsafe_allow_html=True)
-        mes_auditoria = st.date_input("Mes de Auditoría (Selecciona cualquier día del mes a evaluar)", value=datetime.today())
+        mes_auditoria = st.date_input(
+            "Rango de Auditoría (Fecha Desde - Fecha Hasta)", 
+            value=(datetime.today().replace(day=1), datetime.today())
+        )
         
         if file_conexiones and file_pagos and file_tickets:
+            # Parse the date range
+            if isinstance(mes_auditoria, tuple) and len(mes_auditoria) == 2:
+                fecha_desde, fecha_hasta = mes_auditoria
+            elif isinstance(mes_auditoria, tuple) and len(mes_auditoria) == 1:
+                fecha_desde = fecha_hasta = mes_auditoria[0]
+            else:
+                fecha_desde = fecha_hasta = mes_auditoria
+
             with st.spinner("🔄 Procesando auditoría de cobranzas..."):
                 try:
                     df_con = leer_archivo(file_conexiones)
@@ -2953,10 +2964,16 @@ def modulo_auditoria_cobranzas():
                     # Normalizar Código
                     for df in [df_con, df_pag, df_tic]:
                         if "Código" in df.columns:
-                            df["Código"] = df["Código"].astype(str).str.strip().str.zfill(1)
+                            col_name = "Código"
                         elif "Codigo" in df.columns:
+                            col_name = "Codigo"
+                        else:
+                            continue
+                            
+                        # Limpiar: convertir a número y luego a string entero (quita ceros a la izq y .0)
+                        df["Código"] = pd.to_numeric(df[col_name], errors='coerce').fillna(-1).astype(int).astype(str)
+                        if "Codigo" in df.columns:
                             df.rename(columns={"Codigo": "Código"}, inplace=True)
-                            df["Código"] = df["Código"].astype(str).str.strip().str.zfill(1)
                             
                     # 1. Filtrar Conexiones Activas
                     if "Estado Cliente" in df_con.columns:
@@ -2968,8 +2985,22 @@ def modulo_auditoria_cobranzas():
                     if "Fecha ingreso" in df_pag.columns:
                         df_pag["Fecha_ingreso_dt"] = parse_fecha(df_pag["Fecha ingreso"])
                         
+                    # Filtrar fechas
+                    fecha_desde_pd = pd.to_datetime(fecha_desde)
+                    fecha_hasta_pd = pd.to_datetime(fecha_hasta)
+                    
+                    # Quedarnos solo con las conexiones instaladas en el rango
+                    if "Fecha_inicio_dt" in df_con.columns:
+                        df_con = df_con[
+                            (df_con["Fecha_inicio_dt"] >= fecha_desde_pd) & 
+                            (df_con["Fecha_inicio_dt"] <= fecha_hasta_pd)
+                        ]
+                    
+                    # Filtrar pagos: solo los realizados hasta la fecha límite
+                    if "Fecha_ingreso_dt" in df_pag.columns:
+                        df_pag = df_pag[df_pag["Fecha_ingreso_dt"] <= fecha_hasta_pd]
+                        
                     # 2. Contar pagos por código
-                    # Group by Código to count payments
                     pagos_por_codigo = df_pag.groupby("Código").size().reset_index(name="Total_Pagos")
                     
                     # 3. Tickets de venta codes
@@ -2983,8 +3014,8 @@ def modulo_auditoria_cobranzas():
                     def evaluar_cobranza(row):
                         alertas = []
                         
-                        # Sin ticket
-                        if row["Código"] not in codigos_con_ticket:
+                        # Sin ticket (excluimos código "-1" por si hubo NaNs en código)
+                        if row["Código"] != "-1" and row["Código"] not in codigos_con_ticket:
                             alertas.append("Sin ticket de venta")
                             
                         # Abono 0
@@ -2999,7 +3030,7 @@ def modulo_auditoria_cobranzas():
                             
                         fecha_inicio = row.get("Fecha_inicio_dt")
                         if pd.notna(fecha_inicio):
-                            meses_antiguedad = (mes_auditoria.year - fecha_inicio.year) * 12 + (mes_auditoria.month - fecha_inicio.month)
+                            meses_antiguedad = (fecha_hasta_pd.year - fecha_inicio.year) * 12 + (fecha_hasta_pd.month - fecha_inicio.month)
                             pagos_esperados = meses_antiguedad
                             
                             # Si empezó entre el 1 y el 25, suma 1 mes más esperado
@@ -3010,7 +3041,7 @@ def modulo_auditoria_cobranzas():
                                 pagos_esperados = 0
                                 
                             if meses_antiguedad >= 2 and total_pagos <= 1:
-                                alertas.append(f"Alerta: {meses_antiguedad} meses con {total_pagos} pagos")
+                                alertas.append(f"Alerta: {meses_antiguedad} meses con solo {total_pagos} pago(s)")
                             
                             if total_pagos < pagos_esperados:
                                 alertas.append(f"Deuda ({total_pagos}/{pagos_esperados} pagos esperados)")
