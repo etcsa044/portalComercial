@@ -3049,8 +3049,11 @@ def modulo_auditoria_cobranzas():
                             if pagos_esperados < 0:
                                 pagos_esperados = 0
                                 
-                            if meses_antiguedad >= 2 and total_pagos <= 1:
-                                alertas.append(f"Alerta: {meses_antiguedad} meses con solo {total_pagos} pago(s)")
+                            if meses_antiguedad >= 2:
+                                if total_pagos == 0:
+                                    alertas.append(f"Peligro: {meses_antiguedad} meses con 0 pagos")
+                                elif total_pagos == 1:
+                                    alertas.append(f"Alerta: {meses_antiguedad} meses con 1 pago")
                             
                             if total_pagos < pagos_esperados:
                                 alertas.append(f"Deuda ({total_pagos}/{pagos_esperados} pagos esperados)")
@@ -3100,9 +3103,28 @@ def modulo_auditoria_cobranzas():
                         titulo_filtro = "Todas las anomalías detectadas"
                         
                     st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    if "Vendedor" in df_aud.columns:
+                        vendedores = sorted([str(v) for v in df_aud["Vendedor"].unique() if pd.notna(v) and str(v).strip()])
+                        if vendedores:
+                            vendedores_seleccionados = st.multiselect("👥 Filtrar por Vendedor(es) (deja vacío para ver todos):", options=vendedores, default=[])
+                            if vendedores_seleccionados:
+                                df_show = df_show[df_show["Vendedor"].astype(str).isin(vendedores_seleccionados)]
+                                
                     st.markdown(f"**Viendo:** {titulo_filtro} ({len(df_show)} registros)")
+                    
+                    def color_filas(row):
+                        estado = str(row.get("Estado_Auditoría", ""))
+                        if "Peligro:" in estado:
+                            return ['background-color: #000000; color: #ff4b4b'] * len(row)
+                        elif "Alerta:" in estado:
+                            return ['background-color: #6b5200; color: #ffeb3b'] * len(row)
+                        return [''] * len(row)
+                        
+                    df_final = df_show[["Código", "Cliente", "Estado Cliente", "Vendedor", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]]
+                    
                     st.dataframe(
-                        df_show[["Código", "Cliente", "Estado Cliente", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]],
+                        df_final.style.apply(color_filas, axis=1),
                         use_container_width=True,
                         height=500
                     )
