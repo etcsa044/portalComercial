@@ -2976,8 +2976,11 @@ def modulo_auditoria_cobranzas():
                             df.rename(columns={"Codigo": "Código"}, inplace=True)
                             
                     # 1. Filtrar Conexiones Activas
+                    original_con_len = len(df_con)
                     if "Estado Cliente" in df_con.columns:
-                        df_con = df_con[df_con["Estado Cliente"].astype(str).str.lower().isin(["activo", "habilitado", "activa", "habilitada"])]
+                        estados_validos = ["activo", "habilitado", "activa", "habilitada", "enabled"]
+                        df_con = df_con[df_con["Estado Cliente"].astype(str).str.strip().str.lower().isin(estados_validos)]
+                    len_after_status = len(df_con)
                         
                     # Parse dates
                     if "Fecha de inicio" in df_con.columns:
@@ -2987,7 +2990,7 @@ def modulo_auditoria_cobranzas():
                         
                     # Filtrar fechas
                     fecha_desde_pd = pd.to_datetime(fecha_desde)
-                    fecha_hasta_pd = pd.to_datetime(fecha_hasta)
+                    fecha_hasta_pd = pd.to_datetime(fecha_hasta) + pd.Timedelta(days=1, seconds=-1) # Incluye todo el último día
                     
                     # Quedarnos solo con las conexiones instaladas en el rango
                     if "Fecha_inicio_dt" in df_con.columns:
@@ -2995,6 +2998,12 @@ def modulo_auditoria_cobranzas():
                             (df_con["Fecha_inicio_dt"] >= fecha_desde_pd) & 
                             (df_con["Fecha_inicio_dt"] <= fecha_hasta_pd)
                         ]
+                    len_after_date = len(df_con)
+                    
+                    with st.expander("🔍 Información de Depuración (Para ver dónde se filtran)"):
+                        st.write(f"- Total inicial en archivo Conexiones: {original_con_len}")
+                        st.write(f"- Quedan tras filtrar Estado Cliente (Activo/Habilitado): {len_after_status}")
+                        st.write(f"- Quedan tras filtrar Rango de Fechas de Inicio: {len_after_date}")
                     
                     # Filtrar pagos: solo los realizados hasta la fecha límite
                     if "Fecha_ingreso_dt" in df_pag.columns:
