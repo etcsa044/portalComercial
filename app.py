@@ -3005,9 +3005,16 @@ def modulo_auditoria_cobranzas():
                         st.write(f"- Quedan tras filtrar Estado Cliente (Activo/Habilitado): {len_after_status}")
                         st.write(f"- Quedan tras filtrar Rango de Fechas de Inicio: {len_after_date}")
                     
-                    # Filtrar pagos: solo los realizados hasta la fecha límite
+                    # Fecha de evaluación para calcular antigüedad de deuda (último pago en el archivo)
+                    fecha_evaluacion = datetime.today()
                     if "Fecha_ingreso_dt" in df_pag.columns:
-                        df_pag = df_pag[df_pag["Fecha_ingreso_dt"] <= fecha_hasta_pd]
+                        max_date = df_pag["Fecha_ingreso_dt"].max()
+                        if pd.notna(max_date):
+                            fecha_evaluacion = max_date
+                    fecha_eval_pd = pd.to_datetime(fecha_evaluacion)
+                    
+                    # NOTA: Ya no filtramos df_pag por fecha_hasta_pd. 
+                    # Queremos ver si el cliente pagó en cualquier momento posterior a su instalación.
                         
                     # 2. Contar pagos por código
                     pagos_por_codigo = df_pag.groupby("Código").size().reset_index(name="Total_Pagos")
@@ -3039,7 +3046,7 @@ def modulo_auditoria_cobranzas():
                             
                         fecha_inicio = row.get("Fecha_inicio_dt")
                         if pd.notna(fecha_inicio):
-                            meses_antiguedad = (fecha_hasta_pd.year - fecha_inicio.year) * 12 + (fecha_hasta_pd.month - fecha_inicio.month)
+                            meses_antiguedad = (fecha_eval_pd.year - fecha_inicio.year) * 12 + (fecha_eval_pd.month - fecha_inicio.month)
                             pagos_esperados = meses_antiguedad
                             
                             # Si empezó entre el 1 y el 25, suma 1 mes más esperado
