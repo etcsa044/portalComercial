@@ -2978,7 +2978,7 @@ def modulo_auditoria_cobranzas():
                     # 1. Filtrar Conexiones Activas
                     original_con_len = len(df_con)
                     if "Estado Cliente" in df_con.columns:
-                        estados_validos = ["activo", "habilitado", "activa", "habilitada", "enabled"]
+                        estados_validos = ["activo", "habilitado", "activa", "habilitada", "enabled", "blocked", "bloqueado", "bloqueada"]
                         df_con = df_con[df_con["Estado Cliente"].astype(str).str.strip().str.lower().isin(estados_validos)]
                     len_after_status = len(df_con)
                         
