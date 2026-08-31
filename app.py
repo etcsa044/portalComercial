@@ -3128,6 +3128,9 @@ def modulo_auditoria_cobranzas():
                             return ['background-color: #6b5200; color: #ffeb3b'] * len(row)
                         return [''] * len(row)
                         
+                    if "Fecha_inicio_dt" in df_show.columns:
+                        df_show["Fecha de inicio"] = df_show["Fecha_inicio_dt"].dt.strftime('%d/%m/%Y').fillna("Sin Fecha")
+                        
                     df_final = df_show[["Código", "Cliente", "Estado Cliente", "Vendedor", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]]
                     
                     st.dataframe(
