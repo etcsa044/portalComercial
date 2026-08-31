@@ -3061,44 +3061,48 @@ def modulo_auditoria_cobranzas():
                     
                     df_anomalias = df_aud[df_aud["Estado_Auditoría"] != "OK"].copy()
                     
+                    if "filtro_cobranzas" not in st.session_state:
+                        st.session_state.filtro_cobranzas = "todas"
+                        
                     st.markdown("### 📊 Resultados de la Auditoría")
+                    st.markdown("<p style='color:#a0a0b8; font-size:0.9rem;'>Haz clic en cualquier tarjeta para filtrar la tabla de abajo.</p>", unsafe_allow_html=True)
                     
                     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
                     with kpi1:
-                        st.markdown(f'''
-                        <div class="kpi-card">
-                            <div class="kpi-value total">{len(df_con)}</div>
-                            <div class="kpi-label">Conexiones Activas</div>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        if st.button(f"🌐 Conexiones Activas\n\n{len(df_con)}", use_container_width=True):
+                            st.session_state.filtro_cobranzas = "todas"
                     with kpi2:
                         sin_pagos = len(df_aud[df_aud["Total_Pagos"] == 0])
-                        st.markdown(f'''
-                        <div class="kpi-card">
-                            <div class="kpi-value rojo">{sin_pagos}</div>
-                            <div class="kpi-label">Conexiones Sin Pagos</div>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        if st.button(f"🔴 Sin Pagos\n\n{sin_pagos}", use_container_width=True):
+                            st.session_state.filtro_cobranzas = "sin_pagos"
                     with kpi3:
                         sin_ticket = df_aud["Estado_Auditoría"].astype(str).str.contains("Sin ticket de venta").sum()
-                        st.markdown(f'''
-                        <div class="kpi-card">
-                            <div class="kpi-value amarillo">{sin_ticket}</div>
-                            <div class="kpi-label">Sin Ticket de Venta</div>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        if st.button(f"🟡 Sin Ticket\n\n{sin_ticket}", use_container_width=True):
+                            st.session_state.filtro_cobranzas = "sin_ticket"
                     with kpi4:
                         abono_0 = df_aud["Estado_Auditoría"].astype(str).str.contains("Plan Abono 0").sum()
-                        st.markdown(f'''
-                        <div class="kpi-card">
-                            <div class="kpi-value amarillo">{abono_0}</div>
-                            <div class="kpi-label">Abonos 0</div>
-                        </div>
-                        ''', unsafe_allow_html=True)
+                        if st.button(f"🟡 Abonos 0\n\n{abono_0}", use_container_width=True):
+                            st.session_state.filtro_cobranzas = "abono_0"
+                            
+                    # Aplicar el filtro seleccionado
+                    filtro_actual = st.session_state.filtro_cobranzas
+                    if filtro_actual == "sin_pagos":
+                        df_show = df_aud[df_aud["Total_Pagos"] == 0].copy()
+                        titulo_filtro = "Conexiones Sin Pagos"
+                    elif filtro_actual == "sin_ticket":
+                        df_show = df_aud[df_aud["Estado_Auditoría"].astype(str).str.contains("Sin ticket de venta")].copy()
+                        titulo_filtro = "Conexiones sin Ticket de Venta"
+                    elif filtro_actual == "abono_0":
+                        df_show = df_aud[df_aud["Estado_Auditoría"].astype(str).str.contains("Plan Abono 0")].copy()
+                        titulo_filtro = "Planes Abono 0"
+                    else:
+                        df_show = df_anomalias.copy()
+                        titulo_filtro = "Todas las anomalías detectadas"
                         
                     st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown(f"**Viendo:** {titulo_filtro} ({len(df_show)} registros)")
                     st.dataframe(
-                        df_anomalias[["Código", "Cliente", "Estado Cliente", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]],
+                        df_show[["Código", "Cliente", "Estado Cliente", "Plan", "Fecha de inicio", "Total_Pagos", "Estado_Auditoría"]],
                         use_container_width=True,
                         height=500
                     )
