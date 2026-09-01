@@ -3111,13 +3111,20 @@ def modulo_auditoria_cobranzas():
                         
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    if "Vendedor" in df_aud.columns:
-                        vendedores = sorted([str(v) for v in df_aud["Vendedor"].unique() if pd.notna(v) and str(v).strip()])
-                        if vendedores:
-                            vendedores_seleccionados = st.multiselect("👥 Filtrar por Vendedor(es) (deja vacío para ver todos):", options=vendedores, default=[])
-                            if vendedores_seleccionados:
-                                df_show = df_show[df_show["Vendedor"].astype(str).isin(vendedores_seleccionados)]
-                                
+                    col_filtros1, col_filtros2 = st.columns(2)
+                    with col_filtros1:
+                        busqueda_nombre = st.text_input("🔍 Buscar por Nombre de Cliente:")
+                        if busqueda_nombre:
+                            df_show = df_show[df_show["Cliente"].astype(str).str.contains(busqueda_nombre, case=False, na=False)]
+                            
+                    with col_filtros2:
+                        if "Vendedor" in df_aud.columns:
+                            vendedores = sorted([str(v) for v in df_aud["Vendedor"].unique() if pd.notna(v) and str(v).strip()])
+                            if vendedores:
+                                vendedores_seleccionados = st.multiselect("👥 Filtrar por Vendedor(es) (vacío para ver todos):", options=vendedores, default=[])
+                                if vendedores_seleccionados:
+                                    df_show = df_show[df_show["Vendedor"].astype(str).isin(vendedores_seleccionados)]
+                                    
                     st.markdown(f"**Viendo:** {titulo_filtro} ({len(df_show)} registros)")
                     
                     def color_filas(row):
